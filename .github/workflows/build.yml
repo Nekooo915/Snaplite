@@ -29,9 +29,10 @@ jobs:
       - name: Select newest Xcode 26.x
         run: |
           set -euo pipefail
-          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null \
+          # Resolve symlinks (Xcode_26.6.0.app -> Xcode_26.6.app), dedupe, pick the highest version.
+          XCODE="$(for x in /Applications/Xcode_26*.app; do [[ -d "$x" ]] && cd "$x" && pwd -P; done 2>/dev/null \
                     | grep -E '/Xcode_26(\.[0-9]+)*\.app$' \
-                    | sort -V | tail -n 1)"
+                    | sort -u -V | tail -n 1)"
           if [[ -z "$XCODE" ]]; then
             echo "::error::No /Applications/Xcode_26*.app on this runner"; ls -d /Applications/Xcode* || true; exit 1
           fi

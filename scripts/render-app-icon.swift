@@ -16,7 +16,12 @@ guard args.count >= 3 else {
     FileHandle.standardError.write("usage: render-app-icon.swift <App.app> <out-dir> [pixels]\n".data(using: .utf8)!)
     exit(2)
 }
-let appPath = args[1]
+// NSWorkspace needs an absolute path; a relative one yields the generic document icon.
+let appPath = URL(fileURLWithPath: args[1]).standardizedFileURL.path
+guard FileManager.default.fileExists(atPath: appPath) else {
+    FileHandle.standardError.write("no such bundle: \(appPath)\n".data(using: .utf8)!)
+    exit(1)
+}
 let outDir = URL(fileURLWithPath: args[2])
 let pixels = args.count > 3 ? Int(args[3]) ?? 1024 : 1024
 try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)

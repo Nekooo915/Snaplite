@@ -361,13 +361,43 @@ let paneSVG = """
 
 """
 
+/// Serialises a CGPath (already in y-down SVG design space) as SVG path data.
+func svgPathData(_ path: CGPath) -> String {
+    func f(_ v: CGFloat) -> String {
+        var t = String(format: "%.2f", Double(v))
+        while t.hasSuffix("0") { t.removeLast() }
+        if t.hasSuffix(".") { t.removeLast() }
+        return t == "-0" ? "0" : t
+    }
+    func pt(_ p: CGPoint) -> String { "\(f(p.x)) \(f(p.y))" }
+    var out: [String] = []
+    path.applyWithBlock { el in
+        let e = el.pointee
+        switch e.type {
+        case .moveToPoint: out.append("M\(pt(e.points[0]))")
+        case .addLineToPoint: out.append("L\(pt(e.points[0]))")
+        case .addQuadCurveToPoint: out.append("Q\(pt(e.points[0])) \(pt(e.points[1]))")
+        case .addCurveToPoint: out.append("C\(pt(e.points[0])) \(pt(e.points[1])) \(pt(e.points[2]))")
+        case .closeSubpath: out.append("Z")
+        @unknown default: break
+        }
+    }
+    return out.joined(separator: " ")
+}
+
+// Icon Composer fills a layer's *shape geometry* with the layer fill, so an open
+// stroked path would get its implied interior (the wedge between the bracket
+// arms) filled too. Emit the brackets as outlined, filled shapes instead
+// (source strokes: Design.*BracketSVG, width 96, round caps/joins).
+let bracketOutlineData = svgPathData(Design.bracketsPath().copy(
+    strokingWithWidth: Design.bracketWidth, lineCap: .round, lineJoin: .round, miterLimit: 10
+))
+
 let cornersSVG = """
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <g fill="none" stroke="#000000" stroke-width="96" stroke-linecap="round" stroke-linejoin="round">
-    <path d="\(Design.topLeftBracketSVG)"/>
-    <path d="\(Design.bottomRightBracketSVG)"/>
-  </g>
+  <!-- Outlined strokes: \(Design.topLeftBracketSVG) | \(Design.bottomRightBracketSVG) (width 96, round) -->
+  <path fill="#000000" fill-rule="nonzero" d="\(bracketOutlineData)"/>
 </svg>
 
 """
