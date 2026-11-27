@@ -2,12 +2,18 @@
 // Reproducible generator for Snaplite's app icon ("Drag Corners", black & white).
 //
 // Usage (from anywhere):
-//   swift scripts/make-icon.swift
+//   swift scripts/make-icon.swift [--preview-dir <dir>]
 //
 // Writes:
-//   assets/AppIcon.iconset/*.png      10 PNGs (16 … 512@2x), macOS 824/1024 grid + shadow
+//   assets/AppIcon.iconset/*.png      10 PNGs (16 … 512@2x), macOS 824/1024 grid + shadow (LIGHT palette)
 //   assets/AppIcon.icns               via `iconutil -c icns`
 //   assets/AppIcon.icon/Assets/*.svg  full-bleed Icon Composer layers (pane, corners)
+//   <preview-dir>/AppIcon-{light,dark}-preview-1024.png   (only with --preview-dir; review aid, not an asset)
+//
+// Appearances (mirrored by assets/AppIcon.icon/icon.json):
+//   light  white squircle (#FFFFFF → #ECECEF) + black glyph (#1C1C1E → #000000), pane black ~11%
+//   dark   black squircle (#2C2C2E → #0A0A0A) + white glyph (#FFFFFF → #E8E8ED), pane white ~18%
+// The static iconset/icns (macOS 14–25, or builds without actool) uses the LIGHT palette.
 //
 // Only CoreGraphics / ImageIO / Foundation are used — no third-party tools.
 
@@ -25,24 +31,97 @@ let iconsetURL = assetsURL.appendingPathComponent("AppIcon.iconset")
 let icnsURL = assetsURL.appendingPathComponent("AppIcon.icns")
 let layerDirURL = assetsURL.appendingPathComponent("AppIcon.icon/Assets")
 
+var previewDirURL: URL?
+do {
+    let args = CommandLine.arguments
+    if let i = args.firstIndex(of: "--preview-dir"), i + 1 < args.count {
+        previewDirURL = URL(fileURLWithPath: args[i + 1])
+    }
+}
+
+// MARK: - Helpers
+
+let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+
+func rgb(_ r: Int, _ g: Int, _ b: Int, _ a: CGFloat = 1) -> CGColor {
+    CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+            components: [CGFloat(r) / 255, CGFloat(g) / 255, CGFloat(b) / 255, a])!
+}
+
+func white(_ a: CGFloat) -> CGColor { rgb(255, 255, 255, a) }
+func black(_ a: CGFloat) -> CGColor { rgb(0, 0, 0, a) }
+
+func gradient(_ colors: [CGColor], _ locations: [CGFloat]? = nil) -> CGGradient {
+    CGGradient(colorsSpace: sRGB, colors: colors as CFArray, locations: locations)!
+}
+
+// MARK: - Palettes
+
+/// One appearance of the icon. `ink` is the glyph family colour (pane tint, rims).
+struct Palette {
+    var name: String
+    var backgroundTop: CGColor
+    var backgroundBottom: CGColor
+    var bracketTop: CGColor
+    var bracketBottom: CGColor
+    var ink: (CGFloat) -> CGColor          // pane tint at a given alpha
+    var paneAlpha: CGFloat
+    var paneRim: (top: CGColor, bottom: CGColor)
+    var sheen: (CGFloat) -> CGColor        // top-left radial sheen colour
+    var sheenScale: CGFloat                // multiplier on Optics.sheen
+    var bracketShadowAlpha: CGFloat
+    var outerShadowAlpha: CGFloat
+    /// Inner rim on the squircle (half inside the clip).
+    var bodyRim: [CGColor]
+    /// Hairline outer border straddling the squircle edge (keeps a white tile visible on white).
+    var bodyBorder: CGColor?
+
+    static let light = Palette(
+        name: "light",
+        backgroundTop: rgb(0xFF, 0xFF, 0xFF),
+        backgroundBottom: rgb(0xEC, 0xEC, 0xEF),
+        bracketTop: rgb(0x1C, 0x1C, 0x1E),
+        bracketBottom: rgb(0x00, 0x00, 0x00),
+        ink: { black($0) },
+        paneAlpha: 0.11,
+        paneRim: (black(0.16), black(0.07)),
+        sheen: { white($0) },
+        sheenScale: 1.0,
+        bracketShadowAlpha: 0.28,
+        outerShadowAlpha: 0.26,
+        bodyRim: [white(0.9), white(0.5), white(0.2)],
+        bodyBorder: black(0.14)
+    )
+
+    static let dark = Palette(
+        name: "dark",
+        backgroundTop: rgb(0x2C, 0x2C, 0x2E),
+        backgroundBottom: rgb(0x0A, 0x0A, 0x0A),
+        bracketTop: rgb(0xFF, 0xFF, 0xFF),
+        bracketBottom: rgb(0xE8, 0xE8, 0xED),
+        ink: { white($0) },
+        paneAlpha: 0.18,
+        paneRim: (white(0.22), white(0.06)),
+        sheen: { white($0) },
+        sheenScale: 1.0,
+        bracketShadowAlpha: 0.55,
+        outerShadowAlpha: 0.32,
+        bodyRim: [white(0.18), white(0.07), white(0.03)],
+        bodyBorder: nil
+    )
+}
+
 // MARK: - Design (1024 × 1024 full-bleed design space, y-down like SVG)
 
 enum Design {
     static let canvas: CGFloat = 1024
 
-    // Background gradient (top → bottom). Dark specialization lives in icon.json.
-    static let backgroundTop = rgb(0x2C, 0x2C, 0x2E)
-    static let backgroundBottom = rgb(0x0A, 0x0A, 0x0A)
-
     // Frosted pane (middle layer).
     static let paneRect = CGRect(x: 352, y: 352, width: 320, height: 320)
     static let paneRadius: CGFloat = 30
-    static let paneAlpha: CGFloat = 0.18
 
     // Corner brackets (top layer).
     static let bracketWidth: CGFloat = 96
-    static let bracketTop = rgb(0xFF, 0xFF, 0xFF)
-    static let bracketBottom = rgb(0xE8, 0xE8, 0xED)
 
     static let topLeftBracketSVG = "M258 490 V318 Q258 258 318 258 H490"
     static let bottomRightBracketSVG = "M766 534 V706 Q766 766 706 766 H534"
@@ -70,35 +149,19 @@ enum Design {
 /// Per-size optical adjustments for the static iconset.
 struct Optics {
     var bracketScale: CGFloat   // multiplier on bracket stroke width
-    var paneAlpha: CGFloat      // 0 drops the pane entirely
+    var paneScale: CGFloat      // multiplier on palette pane alpha; 0 drops the pane entirely
     var paneRim: Bool           // hairline glass rim on the pane
     var bodyRim: Bool           // inner rim on the squircle
     var sheen: CGFloat          // peak opacity of the top-left radial sheen
 
     static func forPixelSize(_ px: Int) -> Optics {
         switch px {
-        case ...16: return Optics(bracketScale: 1.28, paneAlpha: 0, paneRim: false, bodyRim: false, sheen: 0.12)
-        case ...32: return Optics(bracketScale: 1.16, paneAlpha: 0.14, paneRim: false, bodyRim: true, sheen: 0.16)
-        case ...64: return Optics(bracketScale: 1.06, paneAlpha: 0.17, paneRim: true, bodyRim: true, sheen: 0.20)
-        default: return Optics(bracketScale: 1.00, paneAlpha: Design.paneAlpha, paneRim: true, bodyRim: true, sheen: 0.22)
+        case ...16: return Optics(bracketScale: 1.28, paneScale: 0, paneRim: false, bodyRim: false, sheen: 0.12)
+        case ...32: return Optics(bracketScale: 1.16, paneScale: 0.78, paneRim: false, bodyRim: true, sheen: 0.16)
+        case ...64: return Optics(bracketScale: 1.06, paneScale: 0.94, paneRim: true, bodyRim: true, sheen: 0.20)
+        default: return Optics(bracketScale: 1.00, paneScale: 1.0, paneRim: true, bodyRim: true, sheen: 0.22)
         }
     }
-}
-
-// MARK: - Helpers
-
-let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
-
-func rgb(_ r: Int, _ g: Int, _ b: Int, _ a: CGFloat = 1) -> CGColor {
-    CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
-            components: [CGFloat(r) / 255, CGFloat(g) / 255, CGFloat(b) / 255, a])!
-}
-
-func white(_ a: CGFloat) -> CGColor { rgb(255, 255, 255, a) }
-func black(_ a: CGFloat) -> CGColor { rgb(0, 0, 0, a) }
-
-func gradient(_ colors: [CGColor], _ locations: [CGFloat]? = nil) -> CGGradient {
-    CGGradient(colorsSpace: sRGB, colors: colors as CFArray, locations: locations)!
 }
 
 /// Apple-style continuous-corner ("squircle") rounded rect.
@@ -138,7 +201,7 @@ func continuousRoundedRect(_ rect: CGRect, radius: CGFloat) -> CGPath {
 
 // MARK: - Static (baked glass) renderer
 
-func renderIcon(pixels px: Int) -> CGImage {
+func renderIcon(pixels px: Int, palette p: Palette) -> CGImage {
     let ctx = CGContext(
         data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
         space: sRGB, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -157,9 +220,9 @@ func renderIcon(pixels px: Int) -> CGImage {
 
     // 1. Outer drop shadow (shadow params are in device space, y-up).
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -10 * k), blur: 22 * k, color: black(0.32))
+    ctx.setShadow(offset: CGSize(width: 0, height: -10 * k), blur: 22 * k, color: black(p.outerShadowAlpha))
     ctx.addPath(body)
-    ctx.setFillColor(Design.backgroundBottom)
+    ctx.setFillColor(p.backgroundBottom)
     ctx.fillPath()
     ctx.restoreGState()
 
@@ -170,16 +233,17 @@ func renderIcon(pixels px: Int) -> CGImage {
 
     // 2. Background vertical gradient.
     ctx.drawLinearGradient(
-        gradient([Design.backgroundTop, Design.backgroundBottom]),
+        gradient([p.backgroundTop, p.backgroundBottom]),
         start: CGPoint(x: 0, y: Design.bodyRect.minY),
         end: CGPoint(x: 0, y: Design.bodyRect.maxY),
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
 
     // 3. Top-left radial sheen.
+    let sheen = optics.sheen * p.sheenScale
     let sheenCenter = CGPoint(x: Design.bodyRect.minX + 0.22 * 824, y: Design.bodyRect.minY + 0.10 * 824)
     ctx.drawRadialGradient(
-        gradient([white(optics.sheen), white(optics.sheen * 0.35), white(0)], [0, 0.45, 1]),
+        gradient([p.sheen(sheen), p.sheen(sheen * 0.35), p.sheen(0)], [0, 0.45, 1]),
         startCenter: sheenCenter, startRadius: 0,
         endCenter: sheenCenter, endRadius: 0.78 * 824,
         options: []
@@ -192,26 +256,27 @@ func renderIcon(pixels px: Int) -> CGImage {
     let s = (824 / Design.canvas) * k              // design units → device pixels
 
     // 4. Frosted pane.
-    if optics.paneAlpha > 0 {
+    let paneAlpha = p.paneAlpha * optics.paneScale
+    if paneAlpha > 0 {
         let pane = CGPath(roundedRect: Design.paneRect, cornerWidth: Design.paneRadius,
                           cornerHeight: Design.paneRadius, transform: nil)
         ctx.saveGState()
         ctx.addPath(pane)
         ctx.clip()
         ctx.drawLinearGradient(
-            gradient([white(optics.paneAlpha * 1.15), white(optics.paneAlpha * 0.85)]),
+            gradient([p.ink(paneAlpha * 1.15), p.ink(paneAlpha * 0.85)]),
             start: CGPoint(x: 0, y: Design.paneRect.minY),
             end: CGPoint(x: 0, y: Design.paneRect.maxY),
             options: []
         )
         if optics.paneRim {
-            // Hairline inner rim (~1 device px), brighter on top.
+            // Hairline inner rim (~1 device px), stronger on top.
             ctx.addPath(pane)
             ctx.setLineWidth(2 / s)
             ctx.replacePathWithStrokedPath()
             ctx.clip()
             ctx.drawLinearGradient(
-                gradient([white(0.22), white(0.06)]),
+                gradient([p.paneRim.top, p.paneRim.bottom]),
                 start: CGPoint(x: 0, y: Design.paneRect.minY),
                 end: CGPoint(x: 0, y: Design.paneRect.maxY),
                 options: []
@@ -226,12 +291,12 @@ func renderIcon(pixels px: Int) -> CGImage {
         lineCap: .round, lineJoin: .round, miterLimit: 10
     )
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -14 * s), blur: 30 * s, color: black(0.55))
+    ctx.setShadow(offset: CGSize(width: 0, height: -14 * s), blur: 30 * s, color: black(p.bracketShadowAlpha))
     ctx.beginTransparencyLayer(auxiliaryInfo: nil)
     ctx.addPath(bracketOutline)
     ctx.clip()
     ctx.drawLinearGradient(
-        gradient([Design.bracketTop, Design.bracketBottom]),
+        gradient([p.bracketTop, p.bracketBottom]),
         start: CGPoint(x: 0, y: 210), end: CGPoint(x: 0, y: 814),
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
@@ -240,7 +305,7 @@ func renderIcon(pixels px: Int) -> CGImage {
 
     ctx.restoreGState() // design transform
 
-    // 6. Inner rim on the body (~1 device px), bright at the top, fading down.
+    // 6. Inner rim on the body (~1 device px), strongest at the top, fading down.
     if optics.bodyRim {
         ctx.saveGState()
         ctx.addPath(body)
@@ -248,7 +313,7 @@ func renderIcon(pixels px: Int) -> CGImage {
         ctx.replacePathWithStrokedPath()
         ctx.clip()
         ctx.drawLinearGradient(
-            gradient([white(0.18), white(0.07), white(0.03)], [0, 0.5, 1]),
+            gradient(p.bodyRim, [0, 0.5, 1]),
             start: CGPoint(x: 0, y: Design.bodyRect.minY),
             end: CGPoint(x: 0, y: Design.bodyRect.maxY),
             options: []
@@ -257,8 +322,21 @@ func renderIcon(pixels px: Int) -> CGImage {
     }
 
     ctx.restoreGState() // body clip
+
+    // 7. Hairline neutral border straddling the edge (≥ 1 device px at every size),
+    //    so a white tile still reads on white Finder / Dock backgrounds.
+    if let border = p.bodyBorder {
+        ctx.saveGState()
+        ctx.addPath(body)
+        ctx.setStrokeColor(border)
+        ctx.setLineWidth(max(1.0, CGFloat(px) / 512) / k)
+        ctx.strokePath()
+        ctx.restoreGState()
+    }
+
     return ctx.makeImage()!
 }
+
 
 func writePNG(_ image: CGImage, to url: URL) throws {
     guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
@@ -271,11 +349,14 @@ func writePNG(_ image: CGImage, to url: URL) throws {
 }
 
 // MARK: - Icon Composer layer SVGs (full-bleed 1024)
+//
+// Colours here are only the shape masks' defaults: icon.json overrides each
+// layer's fill per appearance (light = black glyph, dark = white glyph).
 
 let paneSVG = """
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <rect x="352" y="352" width="320" height="320" rx="30" ry="30" fill="#FFFFFF"/>
+  <rect x="352" y="352" width="320" height="320" rx="30" ry="30" fill="#000000"/>
 </svg>
 
 """
@@ -283,13 +364,7 @@ let paneSVG = """
 let cornersSVG = """
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="bracket" gradientUnits="userSpaceOnUse" x1="0" y1="210" x2="0" y2="814">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#E8E8ED"/>
-    </linearGradient>
-  </defs>
-  <g fill="none" stroke="url(#bracket)" stroke-width="96" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#000000" stroke-width="96" stroke-linecap="round" stroke-linejoin="round">
     <path d="\(Design.topLeftBracketSVG)"/>
     <path d="\(Design.bottomRightBracketSVG)"/>
   </g>
@@ -312,8 +387,17 @@ let entries: [(name: String, px: Int)] = [
 ]
 for entry in entries {
     let url = iconsetURL.appendingPathComponent("\(entry.name).png")
-    try writePNG(renderIcon(pixels: entry.px), to: url)
-    print("wrote \(url.path.replacingOccurrences(of: repoURL.path + "/", with: "")) (\(entry.px)px)")
+    try writePNG(renderIcon(pixels: entry.px, palette: .light), to: url)
+    print("wrote \(url.path.replacingOccurrences(of: repoURL.path + "/", with: "")) (\(entry.px)px, light)")
+}
+
+if let previewDirURL {
+    try fm.createDirectory(at: previewDirURL, withIntermediateDirectories: true)
+    for palette in [Palette.light, Palette.dark] {
+        let url = previewDirURL.appendingPathComponent("AppIcon-\(palette.name)-preview-1024.png")
+        try writePNG(renderIcon(pixels: 1024, palette: palette), to: url)
+        print("wrote \(url.path) (preview)")
+    }
 }
 
 for legacy in ["corner-anchor.svg", "frame-dashes.svg"] {
