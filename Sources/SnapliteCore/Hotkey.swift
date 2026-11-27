@@ -69,7 +69,7 @@ public enum HotkeyValidator {
     }
 
     public static func validate(_ binding: HotkeyBinding) -> Result<Void, HotkeyError> {
-        if isModifierKey(binding.keyCode) {
+        guard UInt16(exactly: binding.keyCode) != nil, !isModifierKey(binding.keyCode) else {
             return .failure(.unsupportedKey)
         }
         let mods = binding.modifiers & HotkeyBinding.modifierMask
@@ -184,7 +184,8 @@ public enum HotkeyDisplay {
 
     @MainActor
     private static func translateASCIIKeyCode(_ keyCode: UInt32) -> String? {
-        guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+        guard let virtualKeyCode = UInt16(exactly: keyCode),
+              let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
               let rawPtr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else {
             return nil
         }
@@ -198,7 +199,7 @@ public enum HotkeyDisplay {
             var actualLength = 0
             let status = UCKeyTranslate(
                 layoutPtr,
-                UInt16(keyCode),
+                virtualKeyCode,
                 UInt16(kUCKeyActionDisplay),
                 0,
                 UInt32(LMGetKbdType()),
