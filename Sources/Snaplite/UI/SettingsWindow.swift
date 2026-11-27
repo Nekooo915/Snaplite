@@ -41,6 +41,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
         if let existing = window {
             viewModel?.refreshSystemState()
             NSApp.activate()
+            existing.orderFrontRegardless()
             existing.makeKeyAndOrderFront(nil)
             return
         }
