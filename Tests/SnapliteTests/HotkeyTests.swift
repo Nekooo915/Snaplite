@@ -216,4 +216,31 @@ struct HotkeyTests {
         manager.cleanup()
         #expect(manager.currentBinding == nil)
     }
+
+    @Test("Out-of-range keyCodes are safely rejected without trapping")
+    @MainActor
+    func outOfRangeKeyCodeHandledSafely() throws {
+        let outOfRangeValues: [UInt32] = [UInt32(UInt16.max) + 1, UInt32.max]
+        for keyCode in outOfRangeValues {
+            let binding = HotkeyBinding(keyCode: keyCode, modifiers: UInt32(optionKey))
+            #expect(failure(of: HotkeyValidator.validate(binding)) == .unsupportedKey)
+            #expect(HotkeyDisplay.keyLabel(for: keyCode) == "Key\(keyCode)")
+            #expect(HotkeyDisplay.tokens(for: binding) == ["⌥", "Key\(keyCode)"])
+            let menu = HotkeyDisplay.menuKeyEquivalent(for: binding)
+            #expect(menu.keyEquivalent.isEmpty)
+            #expect(menu.modifierMask.isEmpty)
+        }
+
+        // Corrupted negative/overflow keyCode in UserDefaults falls back to default binding.
+        let suite = "com.nekooo915.snaplite.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(-1, forKey: "snaplite.v2.hotkey.keyCode")
+        defaults.set(Int(optionKey), forKey: "snaplite.v2.hotkey.modifiers")
+
+        let prefs = Preferences(defaults: defaults)
+        #expect(prefs.hotkey == .default)
+    }
 }
