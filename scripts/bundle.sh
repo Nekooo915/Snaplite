@@ -44,9 +44,16 @@ else
     ARCH_LABEL="universal (arm64 + x86_64)"
 fi
 
-BUILD_FLAGS=(-c release "${ARCH_FLAGS[@]}" -Xswiftc -Osize -Xlinker -dead_strip)
+BUILD_FLAGS=(
+    -c release
+    "${ARCH_FLAGS[@]}"
+    -Xswiftc -Osize
+    -Xswiftc -whole-module-optimization
+    -Xlinker -dead_strip
+    -Xlinker -dead_strip_dylibs
+)
 
-echo "==> Building ($ARCH_LABEL, release, -Osize, -dead_strip)..."
+echo "==> Building ($ARCH_LABEL, release, -Osize, -whole-module-optimization, -dead_strip)..."
 cd "$REPO_DIR"
 swift build "${BUILD_FLAGS[@]}"
 
@@ -78,9 +85,23 @@ mkdir -p "$APP_DIR/Contents/Resources"
 cp "$BUILD_BIN" "$APP_DIR/Contents/MacOS/$BIN_NAME"
 cp "$REPO_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
 
-# Strip local symbols before signing to keep binary size tight.
+# Strip local symbols before stamping/signing to keep binary size tight.
 echo "==> Stripping binary..."
 strip -x "$APP_DIR/Contents/MacOS/$BIN_NAME"
+
+# SwiftPM stamps LC_BUILD_VERSION with sdk == deployment target (14.0), which
+# puts macOS 26+ into pre-Liquid-Glass compatibility mode. Re-stamp with the
+# active SDK version while preserving the deployment target (minos 14.0).
+SDK_VER="$(xcrun --show-sdk-version)"
+MIN_MACOS="14.0"
+if [[ -x /usr/libexec/PlistBuddy ]]; then
+    PLIST_MIN="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_DIR/Contents/Info.plist" 2>/dev/null || true)"
+    [[ -n "$PLIST_MIN" ]] && MIN_MACOS="$PLIST_MIN"
+fi
+echo "==> Stamping LC_BUILD_VERSION (macos minos=$MIN_MACOS, sdk=$SDK_VER)..."
+vtool -set-build-version macos "$MIN_MACOS" "$SDK_VER" -replace \
+    -output "$APP_DIR/Contents/MacOS/$BIN_NAME" \
+    "$APP_DIR/Contents/MacOS/$BIN_NAME"
 
 # Build app icon: prefer Icon Composer (.icon -> Assets.car) via actool when
 # Xcode is installed; otherwise fall back cleanly to AppIcon.iconset -> .icns.
@@ -138,7 +159,7 @@ ARCHS="$(lipo -archs "$APP_DIR/Contents/MacOS/$BIN_NAME" 2>/dev/null || echo "$A
 
 echo
 echo "OK: $APP_DIR"
-echo "    Binary: ${BIN_BYTES} bytes (${BIN_KB} KB) [${ARCHS}]"
+echo "    Binary: ${BIN_BYTES} bytes (${BIN_KB} KB) [${ARCHS}] (macos minos=${MIN_MACOS}, sdk=${SDK_VER})"
 if [[ -f "$APP_DIR/Contents/Resources/Assets.car" ]]; then
     echo "    Icon:   Assets.car (Liquid Glass) + AppIcon.icns (CFBundleIconName=AppIcon)"
 elif [[ -f "$APP_DIR/Contents/Resources/AppIcon.icns" ]]; then
