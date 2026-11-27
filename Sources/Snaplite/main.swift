@@ -1,15 +1,35 @@
 import AppKit
+import SnapliteCore
 
-// If another instance is already running, forward "show" to it and exit
-// before NSApp ever boots. Mirrors the Rust build's startup gate.
+@MainActor
+final class MinimalAppDelegate: NSObject, NSApplicationDelegate {
+    private let preferences = Preferences()
+    private let capturer = Capturer()
+    private let hotkeys = HotkeyManager()
+    private var showObserver: NSObjectProtocol?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = hotkeys.register(preferences.hotkey) { [weak self] in
+            guard let self else { return }
+            self.capturer.capture(using: self.preferences)
+        }
+        showObserver = SingleInstance.observeShowRequests {}
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        hotkeys.cleanup()
+        if let showObserver {
+            DistributedNotificationCenter.default().removeObserver(showObserver)
+        }
+    }
+}
+
 if SingleInstance.tryForwardToExisting() {
     exit(0)
 }
 
 let app = NSApplication.shared
-let delegate = AppDelegate()
+let delegate = MinimalAppDelegate()
 app.delegate = delegate
-// Start as a menubar-only app; AppDelegate flips this to .regular while a
-// window is open if the user hid the tray icon.
 app.setActivationPolicy(.accessory)
 app.run()
