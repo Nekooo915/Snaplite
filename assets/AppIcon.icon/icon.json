@@ -1,12 +1,12 @@
 {
   "fill": {
     "linear-gradient": [
-      "srgb:0.21961,0.56471,1.00000,1.00000",
-      "srgb:0.26667,0.21961,0.79216,1.00000"
+      "srgb:0.17255,0.17255,0.18039,1.00000",
+      "srgb:0.03922,0.03922,0.03922,1.00000"
     ],
     "orientation": {
-      "start": { "x": 0.15, "y": 0.0 },
-      "stop": { "x": 0.85, "y": 1.0 }
+      "start": { "x": 0.5, "y": 0.0 },
+      "stop": { "x": 0.5, "y": 1.0 }
     }
   },
   "fill-specializations": [
@@ -14,12 +14,12 @@
       "appearance": "dark",
       "value": {
         "linear-gradient": [
-          "srgb:0.14118,0.34118,0.74118,1.00000",
-          "srgb:0.14902,0.12157,0.47059,1.00000"
+          "srgb:0.10980,0.10980,0.11765,1.00000",
+          "srgb:0.00000,0.00000,0.00000,1.00000"
         ],
         "orientation": {
-          "start": { "x": 0.15, "y": 0.0 },
-          "stop": { "x": 0.85, "y": 1.0 }
+          "start": { "x": 0.5, "y": 0.0 },
+          "stop": { "x": 0.5, "y": 1.0 }
         }
       }
     }
@@ -29,22 +29,35 @@
       "layers": [
         {
           "glass": true,
-          "image-name": "corner-anchor.svg",
-          "name": "Corner Anchor"
-        },
-        {
-          "glass": true,
-          "image-name": "frame-dashes.svg",
-          "name": "Selection Frame"
+          "image-name": "corners.svg",
+          "name": "Corners"
         }
       ],
       "shadow": {
         "kind": "neutral",
-        "opacity": 0.35
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.0
+      }
+    },
+    {
+      "layers": [
+        {
+          "glass": true,
+          "image-name": "pane.svg",
+          "name": "Pane",
+          "opacity": 0.4
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.2
       },
       "translucency": {
         "enabled": true,
-        "value": 0.15
+        "value": 0.6
       }
     }
   ],

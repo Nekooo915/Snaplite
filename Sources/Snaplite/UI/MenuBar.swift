@@ -151,68 +151,41 @@ final class MenuBar: NSObject, NSMenuDelegate {
 
     // MARK: - 18pt Vector Template Icon
 
-    /// Draws Snaplite's dashed selection frame with a solid top-left rounded anchor
-    /// centered inside an 18×18 pt template image.
+    /// Draws Snaplite's "drag corners" motif — two rounded corner brackets around a
+    /// translucent capture pane — centered inside an 18×18 pt template image.
+    /// Geometry is authored y-down (SVG) and mirrored here into AppKit's
+    /// unflipped space (y' = 18 - y).
     private static func makeTemplateIcon() -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size, flipped: false) { _ in
-            NSColor.black.setFill()
+            // Pane: rect (6, 6, 6, 6) rx 1 at 38% alpha (symmetric, so unchanged by the flip).
+            NSColor.black.withAlphaComponent(0.38).setFill()
+            NSBezierPath(
+                roundedRect: NSRect(x: 6, y: 6, width: 6, height: 6),
+                xRadius: 1,
+                yRadius: 1
+            ).fill()
+
             NSColor.black.setStroke()
-
-            // Solid rounded top-left anchor square (non-flipped: top is y = 15.75).
-            let anchorRect = NSRect(x: 2.25, y: 11.25, width: 4.5, height: 4.5)
-            NSBezierPath(roundedRect: anchorRect, xRadius: 1.0, yRadius: 1.0).fill()
-
-            // Rounded corner L-brackets (top-right, bottom-right, bottom-left).
-            let strokeWidth: CGFloat = 1.4
             let corners = NSBezierPath()
-            corners.lineWidth = strokeWidth
+            corners.lineWidth = 2
             corners.lineCapStyle = .round
             corners.lineJoinStyle = .round
 
-            // Top-right corner
-            corners.move(to: NSPoint(x: 13.85, y: 15.05))
-            corners.line(to: NSPoint(x: 15.05, y: 15.05))
-            corners.line(to: NSPoint(x: 15.05, y: 13.85))
+            // Stroke centerlines sit on x/y = 3 and 15 so the 2 pt strokes cover
+            // whole pixels (2…4, 14…16) at both @1x and @2x.
+            // Top-left: M3 8.6 V4.4 Q3 3 4.4 3 H8.6
+            corners.move(to: NSPoint(x: 3, y: 9.4))
+            corners.line(to: NSPoint(x: 3, y: 13.6))
+            corners.curve(to: NSPoint(x: 4.4, y: 15), controlPoint: NSPoint(x: 3, y: 15))
+            corners.line(to: NSPoint(x: 8.6, y: 15))
 
-            // Bottom-right corner
-            corners.move(to: NSPoint(x: 15.05, y: 4.15))
-            corners.line(to: NSPoint(x: 15.05, y: 2.95))
-            corners.line(to: NSPoint(x: 13.85, y: 2.95))
-
-            // Bottom-left corner
-            corners.move(to: NSPoint(x: 4.15, y: 2.95))
-            corners.line(to: NSPoint(x: 2.95, y: 2.95))
-            corners.line(to: NSPoint(x: 2.95, y: 4.15))
+            // Bottom-right: M15 9.4 V13.6 Q15 15 13.6 15 H9.4
+            corners.move(to: NSPoint(x: 15, y: 8.6))
+            corners.line(to: NSPoint(x: 15, y: 4.4))
+            corners.curve(to: NSPoint(x: 13.6, y: 3), controlPoint: NSPoint(x: 15, y: 3))
+            corners.line(to: NSPoint(x: 9.4, y: 3))
             corners.stroke()
-
-            // Evenly spaced rounded dashes along all four edges.
-            let dashThickness: CGFloat = 1.4
-            let dashRadius: CGFloat = 0.55
-
-            // Top edge (2 dashes between anchor and top-right bracket)
-            for x in [7.82, 10.49] as [CGFloat] {
-                let rect = NSRect(x: x, y: 14.35, width: 1.6, height: dashThickness)
-                NSBezierPath(roundedRect: rect, xRadius: dashRadius, yRadius: dashRadius).fill()
-            }
-
-            // Left edge (2 dashes between bottom-left bracket and anchor)
-            for y in [5.92, 8.59] as [CGFloat] {
-                let rect = NSRect(x: 2.25, y: y, width: dashThickness, height: 1.6)
-                NSBezierPath(roundedRect: rect, xRadius: dashRadius, yRadius: dashRadius).fill()
-            }
-
-            // Right edge (3 dashes between bottom-right and top-right brackets)
-            for y in [5.875, 8.30, 10.725] as [CGFloat] {
-                let rect = NSRect(x: 14.35, y: y, width: dashThickness, height: 1.4)
-                NSBezierPath(roundedRect: rect, xRadius: dashRadius, yRadius: dashRadius).fill()
-            }
-
-            // Bottom edge (3 dashes between bottom-left and bottom-right brackets)
-            for x in [5.875, 8.30, 10.725] as [CGFloat] {
-                let rect = NSRect(x: x, y: 2.25, width: 1.4, height: dashThickness)
-                NSBezierPath(roundedRect: rect, xRadius: dashRadius, yRadius: dashRadius).fill()
-            }
 
             return true
         }
