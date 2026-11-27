@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bracket" gradientUnits="userSpaceOnUse" x1="0" y1="210" x2="0" y2="814">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E8E8ED"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#bracket)" stroke-width="96" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M258 490 V318 Q258 258 318 258 H490"/>
+    <path d="M766 534 V706 Q766 766 706 766 H534"/>
+  </g>
+</svg>
