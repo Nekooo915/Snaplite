@@ -99,9 +99,14 @@ final class SettingsViewModel {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             let keyCode = UInt32(event.keyCode)
             let modifierFlags = event.modifierFlags
+            let isRepeat = event.isARepeat
             let consumed = MainActor.assumeIsolated {
                 guard let self else { return false }
-                return self.handleRecordedKey(keyCode: keyCode, modifierFlags: modifierFlags)
+                return self.handleRecordedKey(
+                    keyCode: keyCode,
+                    modifierFlags: modifierFlags,
+                    isRepeat: isRepeat
+                )
             }
             return consumed ? nil : event
         }
@@ -130,8 +135,13 @@ final class SettingsViewModel {
         }
     }
 
-    private func handleRecordedKey(keyCode: UInt32, modifierFlags: NSEvent.ModifierFlags) -> Bool {
+    private func handleRecordedKey(
+        keyCode: UInt32,
+        modifierFlags: NSEvent.ModifierFlags,
+        isRepeat: Bool
+    ) -> Bool {
         guard isRecordingHotkey else { return false }
+        guard !isRepeat else { return true }
 
         let relevantModifiers = modifierFlags.intersection([.command, .option, .control, .shift])
         if keyCode == UInt32(kVK_Escape) && relevantModifiers.isEmpty {
