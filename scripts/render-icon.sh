@@ -50,8 +50,25 @@ if [[ -d "$APP" ]]; then
     echo "==> Rendering compiled bundle icon via NSWorkspace..."
     swift "$SCRIPT_DIR/render-app-icon.swift" "$APP" "$OUT" 1024 light -AppleInterfaceStyle Light \
         || echo "WARN: render-app-icon.swift (light) failed" >&2
+    # IconServices renders out-of-process using the *system* appearance. On the
+    # ephemeral GitHub Actions VM only, flip the CI user's global appearance to
+    # Dark for the dark render (and restore it); locally nothing is changed.
+    FLIPPED=0
+    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+        defaults write -g AppleInterfaceStyle Dark && FLIPPED=1
+        killall iconservicesagent 2>/dev/null || true
+        sleep 2
+    fi
     swift "$SCRIPT_DIR/render-app-icon.swift" "$APP" "$OUT" 1024 dark -AppleInterfaceStyle Dark \
         || echo "WARN: render-app-icon.swift (dark) failed" >&2
+    if [[ "$FLIPPED" == "1" ]]; then
+        defaults delete -g AppleInterfaceStyle 2>/dev/null || true
+        killall iconservicesagent 2>/dev/null || true
+    fi
+    if cmp -s "$OUT/compiled-light-1024.png" "$OUT/compiled-dark-1024.png"; then
+        echo "NOTE: compiled light/dark renders are identical (IconServices ignored the appearance);" \
+             "see ictool-*.png for per-appearance renders of the same .icon source."
+    fi
 else
     echo "WARN: $APP not found; skipping compiled icon renders" >&2
 fi
