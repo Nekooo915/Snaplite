@@ -27,7 +27,7 @@
 
 ## 安装
 
-到 [Releases](https://github.com/Nekooo915/snaplite/releases) 下载最新版本：
+到 [Releases](https://github.com/Nekooo915/Snaplite/releases) 下载最新版本：
 
 ```bash
 unzip Snaplite-v0.2.0-macos-universal.zip

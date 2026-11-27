@@ -1,19 +1,21 @@
 #!/usr/bin/env swift
-// Render the app icon of a built .app bundle to PNGs in light and dark appearance.
+// Render the app icon of a built .app bundle to a PNG in one appearance.
 //
 // Usage:
-//   swift scripts/render-app-icon.swift dist/Snaplite.app <out-dir> [pixels=1024]
+//   swift scripts/render-app-icon.swift <App.app> <out-dir> [pixels=1024] [light|dark]
 //
-// Uses NSWorkspace (IconServices), i.e. exactly what Finder / Dock resolve from
-// Assets.car (CFBundleIconName) or AppIcon.icns. Each appearance is rendered
-// with NSApp.appearance + performAsCurrentDrawingAppearance so layered
-// (Icon Composer) icons resolve their light / dark specializations.
+// Uses NSWorkspace (IconServices), i.e. what Finder / Dock resolve from
+// Assets.car (CFBundleIconName) or AppIcon.icns. Layered Icon Composer icons
+// follow the *process* appearance, so scripts/render-icon.sh runs this once per
+// appearance and forces dark with the `-AppleInterfaceStyle Dark` argument
+// domain (no system setting is changed). NSApp.appearance and
+// performAsCurrentDrawingAppearance are set as well for good measure.
 
 import AppKit
 
 let args = CommandLine.arguments
 guard args.count >= 3 else {
-    FileHandle.standardError.write("usage: render-app-icon.swift <App.app> <out-dir> [pixels]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: render-app-icon.swift <App.app> <out-dir> [pixels] [light|dark]\n".data(using: .utf8)!)
     exit(2)
 }
 // NSWorkspace needs an absolute path; a relative one yields the generic document icon.
@@ -24,14 +26,13 @@ guard FileManager.default.fileExists(atPath: appPath) else {
 }
 let outDir = URL(fileURLWithPath: args[2])
 let pixels = args.count > 3 ? Int(args[3]) ?? 1024 : 1024
+let mode = args.count > 4 && args[4] == "dark" ? "dark" : "light"
 try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
-let app = NSApplication.shared
-_ = app
-
 @MainActor
-func render(_ name: String, appearance: NSAppearance) throws {
-    NSApp.appearance = appearance
+func render() throws {
+    let appearance = NSAppearance(named: mode == "dark" ? .darkAqua : .aqua)!
+    NSApplication.shared.appearance = appearance
     guard let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -53,12 +54,10 @@ func render(_ name: String, appearance: NSAppearance) throws {
     guard let png = rep.representation(using: .png, properties: [:]) else {
         throw NSError(domain: "render", code: 2)
     }
-    let url = outDir.appendingPathComponent("compiled-\(name)-\(pixels).png")
+    let url = outDir.appendingPathComponent("compiled-\(mode)-\(pixels).png")
     try png.write(to: url)
-    print("wrote \(url.path)")
+    let style = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") ?? "Light"
+    print("wrote \(url.path) (AppleInterfaceStyle=\(style), effective=\(NSApplication.shared.effectiveAppearance.name.rawValue))")
 }
 
-try MainActor.assumeIsolated {
-    try render("light", appearance: NSAppearance(named: .aqua)!)
-    try render("dark", appearance: NSAppearance(named: .darkAqua)!)
-}
+try MainActor.assumeIsolated { try render() }

@@ -48,8 +48,10 @@ fi
 
 if [[ -d "$APP" ]]; then
     echo "==> Rendering compiled bundle icon via NSWorkspace..."
-    swift "$SCRIPT_DIR/render-app-icon.swift" "$APP" "$OUT" 1024 \
-        || echo "WARN: render-app-icon.swift failed" >&2
+    swift "$SCRIPT_DIR/render-app-icon.swift" "$APP" "$OUT" 1024 light -AppleInterfaceStyle Light \
+        || echo "WARN: render-app-icon.swift (light) failed" >&2
+    swift "$SCRIPT_DIR/render-app-icon.swift" "$APP" "$OUT" 1024 dark -AppleInterfaceStyle Dark \
+        || echo "WARN: render-app-icon.swift (dark) failed" >&2
 else
     echo "WARN: $APP not found; skipping compiled icon renders" >&2
 fi

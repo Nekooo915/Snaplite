@@ -117,9 +117,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+          ASSETS=("${{ steps.zip.outputs.zip }}" "${{ steps.zip.outputs.zip }}.sha256")
+          # Curated notes live in .github/release-notes/<tag>.md; fall back to generated notes.
+          NOTES=(--generate-notes)
+          [[ -f ".github/release-notes/${TAG}.md" ]] && NOTES=(--notes-file ".github/release-notes/${TAG}.md")
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${{ steps.zip.outputs.zip }}" "${{ steps.zip.outputs.zip }}.sha256" --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
-            gh release create "$TAG" "${{ steps.zip.outputs.zip }}" "${{ steps.zip.outputs.zip }}.sha256" \
-              --title "Snaplite $TAG" --generate-notes
+            gh release create "$TAG" "${ASSETS[@]}" --title "Snaplite $TAG" --verify-tag "${NOTES[@]}"
           fi
