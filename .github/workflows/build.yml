@@ -1,0 +1,124 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build (Xcode 26, universal)
+    # macOS 26 arm64 image; ships Xcode 26.x (actool + Icon Composer for the Liquid Glass .icon).
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: write   # only used by the tag path (gh release create)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select newest Xcode 26.x
+        run: |
+          set -euo pipefail
+          XCODE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null \
+                    | grep -E '/Xcode_26(\.[0-9]+)*\.app$' \
+                    | sort -V | tail -n 1)"
+          if [[ -z "$XCODE" ]]; then
+            echo "::error::No /Applications/Xcode_26*.app on this runner"; ls -d /Applications/Xcode* || true; exit 1
+          fi
+          echo "Selecting $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+          swift --version
+          xcrun --show-sdk-version
+          xcrun --find actool
+
+      - name: Test
+        run: swift test
+
+      - name: Bundle (universal, actool icon)
+        env:
+          ACTOOL_STRICT: "1"
+          # Developer ID signing (not enabled — CI signs ad-hoc). To enable, import a
+          # certificate into a temporary keychain first, then pass its identity, e.g.:
+          # SIGN_ID: ${{ secrets.SIGN_ID }}   # "Developer ID Application: Name (TEAMID)"
+        run: bash scripts/bundle.sh
+
+      - name: Verify Assets.car + CFBundleIconName
+        run: |
+          set -euo pipefail
+          APP=dist/Snaplite.app
+          test -f "$APP/Contents/Resources/Assets.car" || { echo "::error::Assets.car missing (actool path not taken)"; exit 1; }
+          ICON_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$APP/Contents/Info.plist")"
+          echo "CFBundleIconName=$ICON_NAME"
+          test "$ICON_NAME" = "AppIcon"
+          plutil -lint "$APP/Contents/Info.plist"
+          codesign --verify --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/Snaplite"
+          vtool -show-build "$APP/Contents/MacOS/Snaplite" | grep -E 'minos|sdk' | sort -u
+          mkdir -p dist/icon-renders
+          xcrun assetutil --info "$APP/Contents/Resources/Assets.car" > dist/icon-renders/assetutil-info.json
+          cat dist/icon-renders/assetutil-info.json
+          echo "--- renditions (Name / Appearance / Idiom / Size) ---"
+          python3 - <<'PY'
+          import json
+          data = json.load(open("dist/icon-renders/assetutil-info.json"))
+          for r in data[1:]:
+              print(" | ".join(str(r.get(k, "-")) for k in ("Name", "AssetType", "Appearance", "Idiom", "PixelWidth", "Scale", "RenditionName")))
+          PY
+          cp dist/actool-output.txt dist/icon-renders/ || true
+
+      - name: Render icon (light / dark)
+        run: bash scripts/render-icon.sh dist/Snaplite.app dist/icon-renders
+
+      - name: Zip
+        id: zip
+        run: |
+          set -euo pipefail
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          ZIP="Snaplite-v${VERSION}-macos-universal.zip"
+          ditto -c -k --keepParent dist/Snaplite.app "dist/$ZIP"
+          shasum -a 256 "dist/$ZIP" | tee "dist/$ZIP.sha256"
+          echo "zip=dist/$ZIP" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Snaplite-v${{ steps.zip.outputs.version }}-macos-universal
+          path: |
+            ${{ steps.zip.outputs.zip }}
+            ${{ steps.zip.outputs.zip }}.sha256
+          if-no-files-found: error
+
+      - name: Upload icon renders
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: icon-renders
+          path: dist/icon-renders/
+          if-no-files-found: warn
+
+      - name: Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.zip.outputs.zip }}" "${{ steps.zip.outputs.zip }}.sha256" --clobber
+          else
+            gh release create "$TAG" "${{ steps.zip.outputs.zip }}" "${{ steps.zip.outputs.zip }}.sha256" \
+              --title "Snaplite $TAG" --generate-notes
+          fi

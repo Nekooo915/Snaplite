@@ -113,6 +113,7 @@ if [[ -n "$ACTOOL_BIN" && -d "$ICON_BUNDLE" ]]; then
     echo "==> Compiling $ICON_BUNDLE with actool (Assets.car + fallback .icns)..."
     PARTIAL_PLIST="$(mktemp -t snaplite-icon-plist)"
     trap 'rm -f "$PARTIAL_PLIST"' EXIT
+    ACTOOL_LOG="$DIST_DIR/actool-output.txt"
     "$ACTOOL_BIN" "$ICON_BUNDLE" \
         --compile "$APP_DIR/Contents/Resources" \
         --app-icon AppIcon \
@@ -120,9 +121,21 @@ if [[ -n "$ACTOOL_BIN" && -d "$ICON_BUNDLE" ]]; then
         --enable-on-demand-resources NO \
         --development-region en \
         --target-device mac \
-        --minimum-deployment-target 14.0 \
+        --minimum-deployment-target "$MIN_MACOS" \
         --platform macosx \
-        --output-partial-info-plist "$PARTIAL_PLIST" >/dev/null
+        --errors --warnings --notices \
+        --output-format human-readable-text \
+        --output-partial-info-plist "$PARTIAL_PLIST" >"$ACTOOL_LOG" 2>&1 || {
+            cat "$ACTOOL_LOG" >&2
+            echo "ERROR: actool failed to compile $ICON_BUNDLE" >&2
+            exit 1
+        }
+    sed 's/^/    actool: /' "$ACTOOL_LOG"
+    # ACTOOL_STRICT=1 (used in CI): any actool warning or error fails the build.
+    if [[ "${ACTOOL_STRICT:-0}" == "1" ]] && grep -Eiq '(warning|error):' "$ACTOOL_LOG"; then
+        echo "ERROR: actool reported warnings/errors (ACTOOL_STRICT=1)" >&2
+        exit 1
+    fi
     # Ensure CFBundleIconName is set in the assembled bundle's Info.plist so
     # macOS 26+ resolves the layered Liquid Glass icon from Assets.car.
     if [[ -x /usr/libexec/PlistBuddy ]]; then

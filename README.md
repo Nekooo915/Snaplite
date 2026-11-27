@@ -1,5 +1,7 @@
 # Snaplite
 
+[![Build](https://github.com/Nekooo915/Snaplite/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Nekooo915/Snaplite/actions/workflows/build.yml)
+
 轻量原生 macOS 截图工具。Swift 6 + 纯 AppKit 常驻层 + 按需加载 Liquid Glass 设置界面。
 
 **~12.8 MB** 后台物理内存 · **0.0%** 静默 CPU · **~78 ms** 冷启动 · **455 KB**（arm64）/ **920 KB**（Universal）可执行文件 · 支持 **macOS 14+**（macOS 26+ 原生 Liquid Glass，macOS 14–25 自动 Material 降级）。
@@ -67,7 +69,12 @@ SIGN_ID="Snaplite Local" bash scripts/bundle.sh --arm64-only
 ### 图标编译
 
 - 安装了 **Xcode 26+**（含 `actool`）时，`scripts/bundle.sh` 自动将 Icon Composer 包 `assets/AppIcon.icon` 编译为 `Assets.car`（macOS 26+ 分层 Liquid Glass 图标）并写入 `CFBundleIconName`，同时保留 `AppIcon.icns` 供 macOS 14–25 回退。
-- 仅安装 Command Line Tools 时，脚本自动回退为 `iconutil` 从 `assets/AppIcon.iconset` 生成 `AppIcon.icns`。
+- 仅安装 Command Line Tools 时，脚本自动回退为 `iconutil` 从 `assets/AppIcon.iconset` 生成 `AppIcon.icns`（静态浅色版：白底黑字）。
+- 图标外观：**浅色模式白底 + 黑色图形**，**深色模式黑底 + 白色图形**（`assets/AppIcon.icon/icon.json` 按外观分别指定背景与图层填充）；`swift scripts/make-icon.swift` 可重新生成回退 PNG / icns 与图层 SVG。
+
+### 持续集成（GitHub Actions）
+
+[`.github/workflows/build.yml`](.github/workflows/build.yml) 在 `macos-26`（Apple Silicon）runner 上选用最新的 **Xcode 26.x**，依次执行 `swift test`、`scripts/bundle.sh`（Universal），并用 `actool` 将 Liquid Glass `.icon` 编译为 `Assets.car`（浅色：白底黑字，深色：黑底白字，`ACTOOL_STRICT=1` 下任何警告即失败）。产物 `Snaplite-v<版本>-macos-universal.zip` 与浅色 / 深色图标渲染图、`assetutil` 输出作为 workflow artifacts 上传；推送 `v*` 标签时自动附加到 GitHub Release。CI 仅做 ad-hoc 签名。本地仅装 Command Line Tools 的构建会回退为静态图标。
 
 ### 测试与性能测量
 
@@ -85,8 +92,11 @@ bash scripts/measure.sh dist/Snaplite.app
 .
 ├── Package.swift                             -- Swift 6 包定义（macOS 14+）
 ├── Resources/Info.plist                      -- Bundle 元数据、LSUIElement、本地化声明
+├── .github/workflows/build.yml               -- GitHub Actions：Xcode 26 测试、Universal 打包、.icon 编译与 artifacts
 ├── scripts/
 │   ├── bundle.sh                             -- 构建（-Osize + WMO + dead_strip）、strip、vtool SDK 标记、图标与签名
+│   ├── make-icon.swift                       -- 生成回退 iconset / icns 与 Icon Composer 图层 SVG（浅色 / 深色配色）
+│   ├── render-icon.sh                        -- 渲染浅色 / 深色图标预览（ictool + NSWorkspace，CI 使用）
 │   └── measure.sh                            -- 体积、冷启动、footprint 与 top 指标采集脚本
 ├── assets/
 │   ├── AppIcon.icon/                         -- Xcode 26 Icon Composer 分层 Liquid Glass 图标包
