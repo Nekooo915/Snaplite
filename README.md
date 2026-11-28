@@ -7,7 +7,11 @@
 **~12.8 MB** 后台物理内存 · **0.0%** 静默 CPU · **~78 ms** 冷启动 · **455 KB**（arm64）/ **920 KB**（Universal）可执行文件 · 支持 **macOS 14+**（macOS 26+ 原生 Liquid Glass，macOS 14–25 自动 Material 降级）。
 
 <p align="center">
-  <img src="assets/AppIcon.iconset/icon_128x128@2x.png" width="96" alt="Snaplite icon">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/readme-icon-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/readme-icon-light.png">
+    <img src="assets/readme-icon-light.png" width="96" alt="Snaplite icon">
+  </picture>
 </p>
 
 ## 功能
